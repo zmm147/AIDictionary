@@ -9,6 +9,18 @@
     <h1>AI Word Lookup Settings</h1>
     
     <div class="form-group">
+      <label>Configuration Presets</label>
+      <div style="display: flex; gap: 10px; margin-bottom: 5px;">
+        <select id="presetSelect" style="flex: 1; padding: 8px;">
+          <option value="">-- Current / New --</option>
+        </select>
+        <button id="savePresetBtn" style="white-space: nowrap;">Save as Preset</button>
+        <button id="deletePresetBtn" style="white-space: nowrap; background: #dc3545; color: white; border: none;">Delete</button>
+      </div>
+      <div class="hint">Select a preset to load configurations, or save current settings as a new preset.</div>
+    </div>
+
+    <div class="form-group">
       <label for="apiUrl">AI Endpoint URL</label>
       <input type="text" id="apiUrl" placeholder="https://api.openai.com/v1/chat/completions">
       <div class="hint">Ensure the URL includes the full path to the chat completions endpoint.</div>
@@ -16,7 +28,7 @@
 
     <div class="form-group">
       <label for="apiKey">API Key</label>
-      <input type="password" id="apiKey" placeholder="sk-...">
+      <input type="text" id="apiKey" placeholder="sk-...">
     </div>
 
     <div class="form-group">
