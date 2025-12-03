@@ -63,6 +63,32 @@
     color: #555;
 }
 
+.ai-lookup-actions {
+  display: flex;
+  align-items: center;
+}
+
+.ai-lookup-pin {
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  color: #aaa;
+  border: none;
+  background: none;
+  padding: 0;
+  margin-left: 10px;
+  transition: all 0.2s;
+}
+
+.ai-lookup-pin:hover {
+  color: #666;
+}
+
+.ai-lookup-pin.active {
+  color: #2196F3;
+  transform: rotate(-45deg);
+}
+
 .ai-lookup-close {
   cursor: pointer;
   font-size: 20px;

@@ -1,6 +1,7 @@
 let currentPopup = null;
 let lastSelection = "";
 let currentPort = null; // For streaming connection
+let isPinned = false;
 
 // Dragging state
 let isDragging = false;
@@ -27,9 +28,11 @@ document.addEventListener('mouseup', (e) => {
 document.addEventListener('keyup', handleSelection); // For keyboard selection
 
 document.addEventListener('mousedown', (e) => {
-  // Close popup if clicking outside
+  // Close popup if clicking outside, unless pinned
   if (currentPopup && !currentPopup.contains(e.target)) {
-    removePopup();
+    if (!isPinned) {
+      removePopup();
+    }
   }
 });
 
@@ -123,15 +126,16 @@ function collectFullSectionContext(element) {
 }
 
 function showPopup(rect, word, context) {
-  removePopup(); 
+  removePopup();
+  isPinned = false; // Reset pinned state for new popup
 
   const popup = document.createElement('div');
   popup.className = 'ai-lookup-popup';
-  
+
   // Get saved position/size
   chrome.storage.local.get(['popupPos', 'popupSize'], (saved) => {
       let x, y, w;
-      
+
       if (saved.popupPos) {
           x = saved.popupPos.x;
           y = saved.popupPos.y;
@@ -139,7 +143,7 @@ function showPopup(rect, word, context) {
           // Default: near selection (fixed coordinates)
           x = rect.left;
           y = rect.bottom + 10;
-          
+
           // Basic viewport bounds check for initial position
           if (y + 200 > window.innerHeight) {
               y = rect.top - 210; // Show above if near bottom
@@ -150,11 +154,11 @@ function showPopup(rect, word, context) {
           if (x < 0) x = 10;
           if (y < 0) y = 10;
       }
-      
+
       if (saved.popupSize && saved.popupSize.w) {
           w = saved.popupSize.w;
       }
-      
+
       popup.style.left = x + 'px';
       popup.style.top = y + 'px';
       if (w) popup.style.width = w + 'px';
@@ -168,7 +172,10 @@ function showPopup(rect, word, context) {
             <span class="ai-lookup-title">AI Lookup</span>
             <a class="ai-lookup-debug-toggle">Show Prompt</a>
           </div>
-          <button class="ai-lookup-close">&times;</button>
+          <div class="ai-lookup-actions">
+            <button class="ai-lookup-pin" title="Pin Popup">📌</button>
+            <button class="ai-lookup-close">&times;</button>
+          </div>
         </div>
         <div class="ai-lookup-body">
             <div class="ai-lookup-debug-content"></div>
@@ -184,7 +191,7 @@ function showPopup(rect, word, context) {
       // Event listeners
       const header = popup.querySelector('.ai-lookup-header');
       header.addEventListener('mousedown', (e) => {
-          if (e.target.closest('.ai-lookup-close') || e.target.closest('.ai-lookup-debug-toggle')) return;
+          if (e.target.closest('.ai-lookup-close') || e.target.closest('.ai-lookup-debug-toggle') || e.target.closest('.ai-lookup-pin')) return;
           isDragging = true;
           dragStartX = e.clientX;
           dragStartY = e.clientY;
@@ -193,6 +200,18 @@ function showPopup(rect, word, context) {
       });
 
       popup.querySelector('.ai-lookup-close').addEventListener('click', removePopup);
+
+      // Pin toggle
+      const pinBtn = popup.querySelector('.ai-lookup-pin');
+      pinBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          isPinned = !isPinned;
+          if (isPinned) {
+              pinBtn.classList.add('active');
+          } else {
+              pinBtn.classList.remove('active');
+          }
+      });
 
       // Debug toggle
       const debugToggle = popup.querySelector('.ai-lookup-debug-toggle');
