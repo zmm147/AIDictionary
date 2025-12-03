@@ -147,7 +147,7 @@ function collectFullSectionContext(element) {
 
 function showPopup(rect, word, context) {
   removePopup();
-  isPinned = false; // Reset pinned state for new popup
+  // isPinned = false; // Reset pinned state for new popup (REMOVED)
 
   const popup = document.createElement('div');
   popup.className = 'ai-lookup-popup';
@@ -193,7 +193,7 @@ function showPopup(rect, word, context) {
             <a class="ai-lookup-debug-toggle">Show Prompt</a>
           </div>
           <div class="ai-lookup-actions">
-            <button class="ai-lookup-pin" title="Pin Popup">📌</button>
+            <button class="ai-lookup-pin ${isPinned ? 'active' : ''}" title="Pin Popup">📌</button>
             <button class="ai-lookup-close">&times;</button>
           </div>
         </div>
@@ -219,7 +219,10 @@ function showPopup(rect, word, context) {
           popupStartY = parseInt(popup.style.top || 0);
       });
 
-      popup.querySelector('.ai-lookup-close').addEventListener('click', removePopup);
+      popup.querySelector('.ai-lookup-close').addEventListener('click', () => {
+          isPinned = false;
+          removePopup();
+      });
 
       // Pin toggle
       const pinBtn = popup.querySelector('.ai-lookup-pin');
