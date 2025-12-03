@@ -157,6 +157,32 @@
     display: none;
 }
 
+.ai-lookup-trigger-icon {
+  position: fixed;
+  z-index: 10001;
+  width: 24px;
+  height: 24px;
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 50%;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.2s, box-shadow 0.2s;
+  font-size: 14px;
+}
+
+.ai-lookup-trigger-icon::after {
+  content: "🔍"; 
+}
+
+.ai-lookup-trigger-icon:hover {
+  transform: scale(1.1);
+  box-shadow: 0 3px 8px rgba(0,0,0,0.3);
+}
+
 /* Scrollbar styling for Webkit */
 .ai-lookup-body::-webkit-scrollbar {
   width: 8px;

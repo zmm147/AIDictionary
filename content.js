@@ -2,6 +2,7 @@ let currentPopup = null;
 let lastSelection = "";
 let currentPort = null; // For streaming connection
 let isPinned = false;
+let triggerIcon = null;
 
 // Dragging state
 let isDragging = false;
@@ -34,6 +35,11 @@ document.addEventListener('mousedown', (e) => {
       removePopup();
     }
   }
+
+  // Remove trigger icon if clicking outside
+  if (triggerIcon && !triggerIcon.contains(e.target)) {
+    removeTriggerIcon();
+  }
 });
 
 document.addEventListener('mousemove', (e) => {
@@ -60,6 +66,11 @@ function handleSelection(e) {
   if (currentPopup && currentPopup.contains(e.target)) {
     return;
   }
+  
+  // If clicking inside the trigger icon, don't re-trigger or it will be handled by click listener
+  if (triggerIcon && triggerIcon.contains(e.target)) {
+    return;
+  }
 
   if (selectedText === lastSelection && currentPopup) {
     return; 
@@ -72,11 +83,20 @@ function handleSelection(e) {
 
   const range = selection.getRangeAt(0);
   const rect = range.getBoundingClientRect();
+
+  // Remove existing trigger icon if any (new selection)
+  removeTriggerIcon();
   
   // Get settings to know how to extract context
-  chrome.storage.sync.get(['contextRange', 'contextLength'], (settings) => {
+  chrome.storage.sync.get(['contextRange', 'contextLength', 'triggerMode'], (settings) => {
+    const triggerMode = settings.triggerMode || 'direct';
     const context = extractContext(range, settings.contextRange || 'paragraph', settings.contextLength || 500);
-    showPopup(rect, selectedText, context);
+    
+    if (triggerMode === 'icon') {
+        showTriggerIcon(rect, selectedText, context);
+    } else {
+        showPopup(rect, selectedText, context);
+    }
   });
 }
 
@@ -311,4 +331,48 @@ function escapeHtml(text) {
   const div = document.createElement('div');
   div.innerText = text;
   return div.innerHTML;
+}
+
+function showTriggerIcon(rect, word, context) {
+  removeTriggerIcon();
+  // Don't remove popup yet, wait until interaction with icon
+  
+  const icon = document.createElement('div');
+  icon.className = 'ai-lookup-trigger-icon';
+  
+  // Calculate position: to the right of selection end
+  let x = rect.right + 5;
+  let y = rect.top; 
+  
+  // Bounds check
+  if (x + 30 > window.innerWidth) {
+      x = rect.left - 35; // Put on left if no space on right
+  }
+  if (y < 0) y = 0;
+  
+  icon.style.left = x + 'px';
+  icon.style.top = y + 'px';
+  
+  document.body.appendChild(icon);
+  triggerIcon = icon;
+  
+  // Hover to trigger
+  icon.addEventListener('mouseenter', () => {
+      removeTriggerIcon();
+      showPopup(rect, word, context);
+  });
+  
+  // Click to trigger (backup/for mobile/touch)
+  icon.addEventListener('click', (e) => {
+      e.stopPropagation();
+      removeTriggerIcon();
+      showPopup(rect, word, context);
+  });
+}
+
+function removeTriggerIcon() {
+    if (triggerIcon) {
+        triggerIcon.remove();
+        triggerIcon = null;
+    }
 }
