@@ -85,16 +85,41 @@ function extractContext(range, mode, length) {
 
   if (mode === 'paragraph') {
     const p = element.closest('p') || element.closest('div') || element;
-    context = p.innerText || p.textContent;
+    context = (p.innerText || p.textContent).replace(/\s+/g, ' ').trim();
+  } else if (mode === 'full-paragraph') {
+    context = collectFullSectionContext(element);
   } else if (mode === 'sentence') {
-    context = element.innerText || element.textContent;
+    context = (element.innerText || element.textContent).replace(/\s+/g, ' ').trim();
   } else if (mode === 'fixed') {
-    context = element.innerText || element.textContent;
+    context = (element.innerText || element.textContent).replace(/\s+/g, ' ').trim();
   } else {
-    context = element.innerText || element.textContent;
+    // Default to paragraph
+    const p = element.closest('p') || element.closest('div') || element;
+    context = (p.innerText || p.textContent).replace(/\s+/g, ' ').trim();
   }
   
-  return context.replace(/\s+/g, ' ').trim();
+  return context;
+}
+
+function collectFullSectionContext(element) {
+  const p = element.closest('p') || element.closest('div') || element;
+  const parent = p.parentElement;
+  
+  if (!parent) {
+    return (p.innerText || p.textContent).replace(/\s+/g, ' ').trim();
+  }
+  
+  // Get all direct child <p> tags
+  // We filter children instead of querySelectorAll to be safe with :scope support or weird structures,
+  // though :scope is well supported in Chrome.
+  const paragraphs = Array.from(parent.children).filter(child => child.tagName === 'P');
+  
+  if (paragraphs.length === 0) {
+    // If no sibling paragraphs found, just return the current element's text
+    return (p.innerText || p.textContent).replace(/\s+/g, ' ').trim();
+  }
+  
+  return paragraphs.map(para => (para.innerText || para.textContent).replace(/\s+/g, ' ').trim()).join('\n\n');
 }
 
 function showPopup(rect, word, context) {
