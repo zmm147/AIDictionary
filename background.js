@@ -20,12 +20,100 @@ chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
     testConnection(request.config).then(sendResponse);
     return true; // Keep channel open for async response
   }
-  
-  if (request.type === 'LOOKUP_WORD') {
-    lookupWord(request.data).then(sendResponse);
-    return true; // Keep channel open
+});
+
+chrome.runtime.onConnect.addListener(function(port) {
+  if (port.name === "lookup_stream") {
+    port.onMessage.addListener(async function(msg) {
+        if (msg.type === 'START_LOOKUP') {
+            await handleStreamLookup(port, msg.data);
+        }
+    });
   }
 });
+
+async function handleStreamLookup(port, data) {
+    try {
+        const settings = await getSettings();
+        if (!settings.apiKey) {
+            port.postMessage({ type: 'ERROR', error: "API Key is missing. Please configure it in extension settings." });
+            return;
+        }
+        
+        const prompt = interpolatePrompt(settings.systemPrompt, data.word, data.context);
+        
+        // Send the prompt to the frontend for debugging
+        port.postMessage({ type: 'DEBUG_PROMPT', prompt: prompt });
+        
+        const response = await fetch(settings.apiUrl, {
+             method: 'POST',
+             headers: {
+                 'Content-Type': 'application/json',
+                 'Authorization': `Bearer ${settings.apiKey}`
+             },
+             body: JSON.stringify({
+                 model: settings.modelName,
+                 messages: [{ role: "user", content: prompt }],
+                 stream: true
+             })
+        });
+        
+        if (!response.ok) {
+            const err = await response.text();
+            port.postMessage({ type: 'ERROR', error: `HTTP ${response.status}: ${err}` });
+            return;
+        }
+        
+        const reader = response.body.getReader();
+        const decoder = new TextDecoder("utf-8");
+        let buffer = '';
+        
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            
+            const chunk = decoder.decode(value, { stream: true });
+            buffer += chunk;
+            
+            const lines = buffer.split('\n');
+            buffer = lines.pop() || ''; 
+            
+            for (const line of lines) {
+                const trimmed = line.trim();
+                if (trimmed === '') continue;
+                if (trimmed === 'data: [DONE]') continue;
+                if (trimmed.startsWith('data: ')) {
+                    const jsonStr = trimmed.substring(6);
+                    try {
+                        const json = JSON.parse(jsonStr);
+                        if (json.choices && json.choices[0].delta && json.choices[0].delta.content) {
+                            port.postMessage({ type: 'CHUNK', content: json.choices[0].delta.content });
+                        }
+                    } catch (e) {
+                        // ignore parse errors for partial chunks or non-json data
+                        // In some cases (non-OpenAI), format might differ, but we assume OpenAI format here as per prompt.
+                    }
+                }
+            }
+        }
+        
+        // Process any remaining buffer if needed, though usually SSE ends with newline
+        if (buffer.startsWith('data: ')) {
+             // Try to parse last line
+             try {
+                const json = JSON.parse(buffer.substring(6));
+                if (json.choices && json.choices[0].delta && json.choices[0].delta.content) {
+                    port.postMessage({ type: 'CHUNK', content: json.choices[0].delta.content });
+                }
+             } catch(e) {}
+        }
+
+        port.postMessage({ type: 'DONE' });
+        
+    } catch (e) {
+        port.postMessage({ type: 'ERROR', error: e.message });
+    }
+}
 
 async function testConnection(config) {
   try {
@@ -51,54 +139,6 @@ async function testConnection(config) {
 
     const data = await response.json();
     return { success: true, data };
-  } catch (error) {
-    return { success: false, error: error.message };
-  }
-}
-
-async function lookupWord(data) {
-  // data contains: { word, context }
-  try {
-    const settings = await getSettings();
-    
-    if (!settings.apiKey) {
-      return { success: false, error: "API Key is missing. Please configure it in extension settings." };
-    }
-
-    const prompt = interpolatePrompt(settings.systemPrompt, data.word, data.context);
-    
-    const response = await fetch(settings.apiUrl, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${settings.apiKey}`
-      },
-      body: JSON.stringify({
-        model: settings.modelName,
-        messages: [
-          { role: "user", content: prompt }
-        ]
-      })
-    });
-
-    if (!response.ok) {
-      const errorData = await response.text();
-      return { success: false, error: `HTTP ${response.status}: ${errorData}` };
-    }
-
-    const result = await response.json();
-    
-    // Parse response for different providers if needed, but standard OpenAI format is:
-    // choices[0].message.content
-    let content = "";
-    if (result.choices && result.choices.length > 0 && result.choices[0].message) {
-      content = result.choices[0].message.content;
-    } else {
-      content = "No response content found.";
-    }
-
-    return { success: true, content };
-
   } catch (error) {
     return { success: false, error: error.message };
   }

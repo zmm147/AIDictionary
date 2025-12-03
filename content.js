@@ -1,5 +1,6 @@
 let currentPopup = null;
 let lastSelection = "";
+let currentPort = null; // For streaming connection
 
 // Dragging state
 let isDragging = false;
@@ -18,8 +19,6 @@ document.addEventListener('mouseup', (e) => {
   // Also save state if we just resized (mouseup happened on popup)
   if (currentPopup && currentPopup.contains(e.target)) {
      savePopupState();
-     // return; // Don't return here, might be text selection inside popup? 
-     // Actually selection inside popup shouldn't trigger main handleSelection logic because of logic inside handleSelection?
   }
 
   handleSelection(e);
@@ -30,8 +29,6 @@ document.addEventListener('keyup', handleSelection); // For keyboard selection
 document.addEventListener('mousedown', (e) => {
   // Close popup if clicking outside
   if (currentPopup && !currentPopup.contains(e.target)) {
-    // Also ignore if clicking on a scrollbar or resize handle? 
-    // Hard to detect.
     removePopup();
   }
 });
@@ -108,7 +105,7 @@ function showPopup(rect, word, context) {
   
   // Get saved position/size
   chrome.storage.local.get(['popupPos', 'popupSize'], (saved) => {
-      let x, y, w, h;
+      let x, y, w;
       
       if (saved.popupPos) {
           x = saved.popupPos.x;
@@ -129,26 +126,30 @@ function showPopup(rect, word, context) {
           if (y < 0) y = 10;
       }
       
-      if (saved.popupSize) {
+      if (saved.popupSize && saved.popupSize.w) {
           w = saved.popupSize.w;
-          h = saved.popupSize.h;
       }
       
       popup.style.left = x + 'px';
       popup.style.top = y + 'px';
       if (w) popup.style.width = w + 'px';
-      if (h) popup.style.height = h + 'px';
+      // We purposefully do NOT restore height so that it adapts to content (height: auto)
+      // unless user resizes vertically, but we only enabled resize: horizontal.
+      // So height is always auto/controlled by content.
 
       popup.innerHTML = `
         <div class="ai-lookup-header">
-          <span class="ai-lookup-title">AI Lookup</span>
+          <div class="ai-lookup-title-group">
+            <span class="ai-lookup-title">AI Lookup</span>
+            <a class="ai-lookup-debug-toggle">Show Prompt</a>
+          </div>
           <button class="ai-lookup-close">&times;</button>
         </div>
         <div class="ai-lookup-body">
-          <div class="ai-lookup-loading">Looking up "${word}"...</div>
-        </div>
-        <div class="ai-lookup-footer">
-          <button class="ai-lookup-btn copy-btn">Copy</button>
+            <div class="ai-lookup-debug-content"></div>
+            <div class="ai-lookup-result">
+                <div class="ai-lookup-loading">Looking up "${word}"...</div>
+            </div>
         </div>
       `;
 
@@ -158,7 +159,7 @@ function showPopup(rect, word, context) {
       // Event listeners
       const header = popup.querySelector('.ai-lookup-header');
       header.addEventListener('mousedown', (e) => {
-          if (e.target.closest('.ai-lookup-close')) return;
+          if (e.target.closest('.ai-lookup-close') || e.target.closest('.ai-lookup-debug-toggle')) return;
           isDragging = true;
           dragStartX = e.clientX;
           dragStartY = e.clientY;
@@ -167,38 +168,73 @@ function showPopup(rect, word, context) {
       });
 
       popup.querySelector('.ai-lookup-close').addEventListener('click', removePopup);
-      popup.querySelector('.copy-btn').addEventListener('click', () => {
-        const content = popup.querySelector('.ai-lookup-content');
-        if (content) {
-          navigator.clipboard.writeText(content.innerText);
-        }
+
+      // Debug toggle
+      const debugToggle = popup.querySelector('.ai-lookup-debug-toggle');
+      const debugContent = popup.querySelector('.ai-lookup-debug-content');
+      debugToggle.addEventListener('click', (e) => {
+          e.stopPropagation();
+          if (debugContent.style.display === 'block') {
+              debugContent.style.display = 'none';
+              debugToggle.textContent = 'Show Prompt';
+          } else {
+              debugContent.style.display = 'block';
+              debugToggle.textContent = 'Hide Prompt';
+          }
       });
 
-      // Send message to background
-      chrome.runtime.sendMessage({
-        type: 'LOOKUP_WORD',
-        data: { word, context }
-      }, (response) => {
-        if (chrome.runtime.lastError) {
-          showError(chrome.runtime.lastError.message);
-          return;
-        }
-        
-        if (response && response.success) {
-          showResult(response.content);
-        } else {
-          showError(response ? response.error : 'Unknown error');
-        }
-      });
+      // Start streaming lookup
+      startLookup(popup, word, context);
   });
+}
+
+function startLookup(popup, word, context) {
+    try {
+        currentPort = chrome.runtime.connect({ name: 'lookup_stream' });
+        
+        let isFirstChunk = true;
+        let fullContent = "";
+        const resultContainer = popup.querySelector('.ai-lookup-result');
+        const debugContent = popup.querySelector('.ai-lookup-debug-content');
+
+        currentPort.onMessage.addListener((msg) => {
+            if (!currentPopup) return; // If popup closed
+            
+            if (msg.type === 'DEBUG_PROMPT') {
+                debugContent.textContent = msg.prompt;
+            } else if (msg.type === 'CHUNK') {
+                if (isFirstChunk) {
+                    resultContainer.innerHTML = '<div class="ai-lookup-content"></div>';
+                    isFirstChunk = false;
+                }
+                fullContent += msg.content;
+                const contentDiv = popup.querySelector('.ai-lookup-content');
+                if (contentDiv) {
+                    contentDiv.innerText = fullContent;
+                }
+            } else if (msg.type === 'DONE') {
+                // Done
+            } else if (msg.type === 'ERROR') {
+                resultContainer.innerHTML = `<div class="ai-lookup-error">${escapeHtml(msg.error)}</div>`;
+            }
+        });
+        
+        currentPort.postMessage({ type: 'START_LOOKUP', data: { word, context } });
+        
+    } catch (e) {
+        showError(e.message);
+    }
 }
 
 function savePopupState() {
     if (!currentPopup) return;
     
+    // We use getBoundingClientRect for position, but for width we want to see if it was resized
     const rect = currentPopup.getBoundingClientRect();
     const pos = { x: rect.left, y: rect.top };
-    const size = { w: rect.width, h: rect.height };
+    
+    // Only save width, height is auto
+    const size = { w: rect.width };
     
     chrome.storage.local.set({
         popupPos: pos,
@@ -206,16 +242,12 @@ function savePopupState() {
     });
 }
 
-function showResult(content) {
-  if (!currentPopup) return;
-  const body = currentPopup.querySelector('.ai-lookup-body');
-  body.innerHTML = `<div class="ai-lookup-content">${escapeHtml(content)}</div>`;
-}
-
 function showError(message) {
   if (!currentPopup) return;
-  const body = currentPopup.querySelector('.ai-lookup-body');
-  body.innerHTML = `<div class="ai-lookup-error">${escapeHtml(message)}</div>`;
+  const result = currentPopup.querySelector('.ai-lookup-result');
+  if (result) {
+      result.innerHTML = `<div class="ai-lookup-error">${escapeHtml(message)}</div>`;
+  }
 }
 
 function removePopup() {
@@ -223,10 +255,11 @@ function removePopup() {
     savePopupState(); // Save on close as well
     currentPopup.remove();
     currentPopup = null;
-    // We don't clear lastSelection here to prevent accidental re-triggering?
-    // Actually if we close it, we might want to lookup the same word again by clicking it.
-    // But selection hasn't changed.
-    // So user has to re-select. That's standard behavior.
+  }
+  
+  if (currentPort) {
+      currentPort.disconnect();
+      currentPort = null;
   }
 }
 
