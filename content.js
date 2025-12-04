@@ -1,6 +1,8 @@
 let currentPopup = null;
 let lastSelection = "";
 let currentPort = null; // For streaming connection
+let isPinned = false;
+let triggerIcon = null;
 
 // Dragging state
 let isDragging = false;
@@ -27,9 +29,16 @@ document.addEventListener('mouseup', (e) => {
 document.addEventListener('keyup', handleSelection); // For keyboard selection
 
 document.addEventListener('mousedown', (e) => {
-  // Close popup if clicking outside
+  // Close popup if clicking outside, unless pinned
   if (currentPopup && !currentPopup.contains(e.target)) {
-    removePopup();
+    if (!isPinned) {
+      removePopup();
+    }
+  }
+
+  // Remove trigger icon if clicking outside
+  if (triggerIcon && !triggerIcon.contains(e.target)) {
+    removeTriggerIcon();
   }
 });
 
@@ -57,6 +66,11 @@ function handleSelection(e) {
   if (currentPopup && currentPopup.contains(e.target)) {
     return;
   }
+  
+  // If clicking inside the trigger icon, don't re-trigger or it will be handled by click listener
+  if (triggerIcon && triggerIcon.contains(e.target)) {
+    return;
+  }
 
   if (selectedText === lastSelection && currentPopup) {
     return; 
@@ -64,16 +78,28 @@ function handleSelection(e) {
 
   lastSelection = selectedText;
 
-  // Length limit
-  if (selectedText.length > 100) return;
-
   const range = selection.getRangeAt(0);
   const rect = range.getBoundingClientRect();
+
+  // Remove existing trigger icon if any (new selection)
+  removeTriggerIcon();
   
   // Get settings to know how to extract context
-  chrome.storage.sync.get(['contextRange', 'contextLength'], (settings) => {
+  chrome.storage.sync.get(['contextRange', 'contextLength', 'triggerMode'], (settings) => {
+    const triggerMode = settings.triggerMode || 'direct';
+    
+    // Length limit - in direct mode only apply to short text, in icon mode always show icon
+    if (triggerMode === 'direct' && selectedText.length > 100) {
+      return;
+    }
+    
     const context = extractContext(range, settings.contextRange || 'paragraph', settings.contextLength || 500);
-    showPopup(rect, selectedText, context);
+    
+    if (triggerMode === 'icon') {
+        showTriggerIcon(rect, selectedText, context);
+    } else {
+        showPopup(rect, selectedText, context);
+    }
   });
 }
 
@@ -85,28 +111,54 @@ function extractContext(range, mode, length) {
 
   if (mode === 'paragraph') {
     const p = element.closest('p') || element.closest('div') || element;
-    context = p.innerText || p.textContent;
+    context = (p.innerText || p.textContent).replace(/\s+/g, ' ').trim();
+  } else if (mode === 'full-paragraph') {
+    context = collectFullSectionContext(element);
   } else if (mode === 'sentence') {
-    context = element.innerText || element.textContent;
+    context = (element.innerText || element.textContent).replace(/\s+/g, ' ').trim();
   } else if (mode === 'fixed') {
-    context = element.innerText || element.textContent;
+    context = (element.innerText || element.textContent).replace(/\s+/g, ' ').trim();
   } else {
-    context = element.innerText || element.textContent;
+    // Default to paragraph
+    const p = element.closest('p') || element.closest('div') || element;
+    context = (p.innerText || p.textContent).replace(/\s+/g, ' ').trim();
   }
   
-  return context.replace(/\s+/g, ' ').trim();
+  return context;
+}
+
+function collectFullSectionContext(element) {
+  const p = element.closest('p') || element.closest('div') || element;
+  const parent = p.parentElement;
+  
+  if (!parent) {
+    return (p.innerText || p.textContent).replace(/\s+/g, ' ').trim();
+  }
+  
+  // Get all direct child <p> tags
+  // We filter children instead of querySelectorAll to be safe with :scope support or weird structures,
+  // though :scope is well supported in Chrome.
+  const paragraphs = Array.from(parent.children).filter(child => child.tagName === 'P');
+  
+  if (paragraphs.length === 0) {
+    // If no sibling paragraphs found, just return the current element's text
+    return (p.innerText || p.textContent).replace(/\s+/g, ' ').trim();
+  }
+  
+  return paragraphs.map(para => (para.innerText || para.textContent).replace(/\s+/g, ' ').trim()).join('\n\n');
 }
 
 function showPopup(rect, word, context) {
-  removePopup(); 
+  removePopup();
+  // isPinned = false; // Reset pinned state for new popup (REMOVED)
 
   const popup = document.createElement('div');
   popup.className = 'ai-lookup-popup';
-  
+
   // Get saved position/size
   chrome.storage.local.get(['popupPos', 'popupSize'], (saved) => {
       let x, y, w;
-      
+
       if (saved.popupPos) {
           x = saved.popupPos.x;
           y = saved.popupPos.y;
@@ -114,7 +166,7 @@ function showPopup(rect, word, context) {
           // Default: near selection (fixed coordinates)
           x = rect.left;
           y = rect.bottom + 10;
-          
+
           // Basic viewport bounds check for initial position
           if (y + 200 > window.innerHeight) {
               y = rect.top - 210; // Show above if near bottom
@@ -125,11 +177,11 @@ function showPopup(rect, word, context) {
           if (x < 0) x = 10;
           if (y < 0) y = 10;
       }
-      
+
       if (saved.popupSize && saved.popupSize.w) {
           w = saved.popupSize.w;
       }
-      
+
       popup.style.left = x + 'px';
       popup.style.top = y + 'px';
       if (w) popup.style.width = w + 'px';
@@ -143,7 +195,10 @@ function showPopup(rect, word, context) {
             <span class="ai-lookup-title">AI Lookup</span>
             <a class="ai-lookup-debug-toggle">Show Prompt</a>
           </div>
-          <button class="ai-lookup-close">&times;</button>
+          <div class="ai-lookup-actions">
+            <button class="ai-lookup-pin ${isPinned ? 'active' : ''}" title="Pin Popup">📌</button>
+            <button class="ai-lookup-close">&times;</button>
+          </div>
         </div>
         <div class="ai-lookup-body">
             <div class="ai-lookup-debug-content"></div>
@@ -159,7 +214,7 @@ function showPopup(rect, word, context) {
       // Event listeners
       const header = popup.querySelector('.ai-lookup-header');
       header.addEventListener('mousedown', (e) => {
-          if (e.target.closest('.ai-lookup-close') || e.target.closest('.ai-lookup-debug-toggle')) return;
+          if (e.target.closest('.ai-lookup-close') || e.target.closest('.ai-lookup-debug-toggle') || e.target.closest('.ai-lookup-pin')) return;
           isDragging = true;
           dragStartX = e.clientX;
           dragStartY = e.clientY;
@@ -167,7 +222,22 @@ function showPopup(rect, word, context) {
           popupStartY = parseInt(popup.style.top || 0);
       });
 
-      popup.querySelector('.ai-lookup-close').addEventListener('click', removePopup);
+      popup.querySelector('.ai-lookup-close').addEventListener('click', () => {
+          isPinned = false;
+          removePopup();
+      });
+
+      // Pin toggle
+      const pinBtn = popup.querySelector('.ai-lookup-pin');
+      pinBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          isPinned = !isPinned;
+          if (isPinned) {
+              pinBtn.classList.add('active');
+          } else {
+              pinBtn.classList.remove('active');
+          }
+      });
 
       // Debug toggle
       const debugToggle = popup.querySelector('.ai-lookup-debug-toggle');
@@ -267,4 +337,48 @@ function escapeHtml(text) {
   const div = document.createElement('div');
   div.innerText = text;
   return div.innerHTML;
+}
+
+function showTriggerIcon(rect, word, context) {
+  removeTriggerIcon();
+  // Don't remove popup yet, wait until interaction with icon
+  
+  const icon = document.createElement('div');
+  icon.className = 'ai-lookup-trigger-icon';
+  
+  // Calculate position: to the right of selection end
+  let x = rect.right + 5;
+  let y = rect.top; 
+  
+  // Bounds check
+  if (x + 30 > window.innerWidth) {
+      x = rect.left - 35; // Put on left if no space on right
+  }
+  if (y < 0) y = 0;
+  
+  icon.style.left = x + 'px';
+  icon.style.top = y + 'px';
+  
+  document.body.appendChild(icon);
+  triggerIcon = icon;
+  
+  // Hover to trigger
+  icon.addEventListener('mouseenter', () => {
+      removeTriggerIcon();
+      showPopup(rect, word, context);
+  });
+  
+  // Click to trigger (backup/for mobile/touch)
+  icon.addEventListener('click', (e) => {
+      e.stopPropagation();
+      removeTriggerIcon();
+      showPopup(rect, word, context);
+  });
+}
+
+function removeTriggerIcon() {
+    if (triggerIcon) {
+        triggerIcon.remove();
+        triggerIcon = null;
+    }
 }

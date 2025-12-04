@@ -63,6 +63,32 @@
     color: #555;
 }
 
+.ai-lookup-actions {
+  display: flex;
+  align-items: center;
+}
+
+.ai-lookup-pin {
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  color: #aaa;
+  border: none;
+  background: none;
+  padding: 0;
+  margin-left: 10px;
+  transition: all 0.2s;
+}
+
+.ai-lookup-pin:hover {
+  color: #666;
+}
+
+.ai-lookup-pin.active {
+  color: #2196F3;
+  transform: rotate(-45deg);
+}
+
 .ai-lookup-close {
   cursor: pointer;
   font-size: 20px;
@@ -129,6 +155,32 @@
     white-space: pre-wrap;
     word-break: break-all;
     display: none;
+}
+
+.ai-lookup-trigger-icon {
+  position: fixed;
+  z-index: 10001;
+  width: 24px;
+  height: 24px;
+  background: white;
+  border: 1px solid #ddd;
+  border-radius: 50%;
+  box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 0.2s, box-shadow 0.2s;
+  font-size: 14px;
+}
+
+.ai-lookup-trigger-icon::after {
+  content: "🔍"; 
+}
+
+.ai-lookup-trigger-icon:hover {
+  transform: scale(1.1);
+  box-shadow: 0 3px 8px rgba(0,0,0,0.3);
 }
 
 /* Scrollbar styling for Webkit */

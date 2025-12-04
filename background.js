@@ -2,13 +2,14 @@
 
 chrome.runtime.onInstalled.addListener(() => {
   // Set default settings if not present
-  chrome.storage.sync.get(['apiUrl', 'apiKey', 'modelName', 'systemPrompt', 'contextRange'], (items) => {
+  chrome.storage.sync.get(['apiUrl', 'apiKey', 'modelName', 'systemPrompt', 'contextRange', 'triggerMode'], (items) => {
     if (!items.apiUrl) {
       chrome.storage.sync.set({
         apiUrl: "https://api.openai.com/v1/chat/completions",
         modelName: "gpt-3.5-turbo",
         systemPrompt: "%context%，根据上面的上下文先给出单词%word%的释义，然后再给出句中的释义",
         contextRange: "paragraph",
+        triggerMode: "direct",
         contextLength: 500
       });
     }

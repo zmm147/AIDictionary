@@ -45,9 +45,16 @@
     <div class="form-group">
       <label for="contextRange">Context Range</label>
       <select id="contextRange">
-        <option value="paragraph">Current Paragraph (&lt;p&gt;)</option>
-        <option value="sentence">Current Sentence (approx.)</option>
-        <option value="fixed">Fixed Characters (surrounding)</option>
+        <option value="paragraph">Single Paragraph (Current &lt;p&gt;)</option>
+        <option value="full-paragraph">Full Paragraph (All Sibling &lt;p&gt;s)</option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label for="triggerMode">Trigger Mode</label>
+      <select id="triggerMode">
+        <option value="direct">Immediate Lookup</option>
+        <option value="icon">Show Icon (Hover to Lookup)</option>
       </select>
     </div>
 

@@ -31,6 +31,7 @@ function restoreOptions() {
     modelName: DEFAULT_MODEL,
     systemPrompt: DEFAULT_PROMPT,
     contextRange: 'paragraph',
+    triggerMode: 'direct',
     contextLength: 500,
     presets: []
   }, (items) => {
@@ -39,6 +40,7 @@ function restoreOptions() {
     document.getElementById('modelName').value = items.modelName;
     document.getElementById('systemPrompt').value = items.systemPrompt;
     document.getElementById('contextRange').value = items.contextRange;
+    document.getElementById('triggerMode').value = items.triggerMode;
     document.getElementById('contextLength').value = items.contextLength;
     toggleContextLength();
     
@@ -128,6 +130,7 @@ function saveOptions() {
   const modelName = document.getElementById('modelName').value;
   const systemPrompt = document.getElementById('systemPrompt').value;
   const contextRange = document.getElementById('contextRange').value;
+  const triggerMode = document.getElementById('triggerMode').value;
   const contextLength = document.getElementById('contextLength').value;
 
   chrome.storage.sync.set({
@@ -136,6 +139,7 @@ function saveOptions() {
     modelName,
     systemPrompt,
     contextRange,
+    triggerMode,
     contextLength: parseInt(contextLength, 10)
   }, () => {
     showStatus('Settings saved and applied.', 'success');
