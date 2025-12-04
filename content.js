@@ -78,9 +78,6 @@ function handleSelection(e) {
 
   lastSelection = selectedText;
 
-  // Length limit
-  if (selectedText.length > 100) return;
-
   const range = selection.getRangeAt(0);
   const rect = range.getBoundingClientRect();
 
@@ -90,6 +87,12 @@ function handleSelection(e) {
   // Get settings to know how to extract context
   chrome.storage.sync.get(['contextRange', 'contextLength', 'triggerMode'], (settings) => {
     const triggerMode = settings.triggerMode || 'direct';
+    
+    // Length limit - in direct mode only apply to short text, in icon mode always show icon
+    if (triggerMode === 'direct' && selectedText.length > 100) {
+      return;
+    }
+    
     const context = extractContext(range, settings.contextRange || 'paragraph', settings.contextLength || 500);
     
     if (triggerMode === 'icon') {
